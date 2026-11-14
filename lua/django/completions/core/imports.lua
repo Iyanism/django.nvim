@@ -21,7 +21,7 @@ M.IMPORT_QUERY = [[
 M.ASSIGNMENT_QUERY = [[
 (assignment
   left: (identifier) @name
-  right: (call function: (attribute) @fn))
+  right: (call function: [(attribute) (identifier)] @fn))
 ]]
 
 --- Per buffer cache: bufnr -> { tick = number, aliases = table }
@@ -116,14 +116,14 @@ function M.__collect_aliases(bufnr)
 	return aliases
 end
 
---- Resolve a local variable to the model it was assigned from
+--- Find the call chain a variable was assigned from
 --- The search is limited to the given scope so that same named variables in
 --- other scopes are ignored.
 --- @param bufnr number
 --- @param name string
 --- @param scope_node TSNode|nil Node limiting the search
---- @return string|nil model_name
-function M.resolve_variable(bufnr, name, scope_node)
+--- @return string|nil chain e.g. "Post.objects.all"
+function M.assignment_chain(bufnr, name, scope_node)
 	local root = M.__root(bufnr)
 	if not root then
 		return nil
@@ -137,6 +137,7 @@ function M.resolve_variable(bufnr, name, scope_node)
 	local scope = scope_node or root
 	local start_row = scope:start()
 	local end_row = scope:end_()
+	local found = nil
 
 	for _, match in query:iter_matches(scope, bufnr, start_row, end_row) do
 		local variable = nil
@@ -157,11 +158,27 @@ function M.resolve_variable(bufnr, name, scope_node)
 		end
 
 		if variable == name and chain then
-			local base = chain:match("^([%w_]+)")
-			if base and base ~= name then
-				return base
-			end
+			found = chain
 		end
+	end
+
+	return found
+end
+
+--- Resolve a local variable to the receiver it was assigned from
+--- @param bufnr number
+--- @param name string
+--- @param scope_node TSNode|nil Node limiting the search
+--- @return string|nil receiver e.g. "Post"
+function M.resolve_variable(bufnr, name, scope_node)
+	local chain = M.assignment_chain(bufnr, name, scope_node)
+	if not chain then
+		return nil
+	end
+
+	local base = chain:match("^([%w_]+)")
+	if base and base ~= name then
+		return base
 	end
 
 	return nil

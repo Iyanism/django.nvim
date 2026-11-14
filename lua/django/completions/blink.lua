@@ -52,7 +52,7 @@ function Source:get_completions(ctx, resolve)
 			return
 		end
 
-		local items = completion_builder.build(parsed.model_name, parsed.method, parsed.prefix)
+		local items = completion_builder.build(parsed.model_name, parsed.method, parsed.prefix, parsed.arg_kind)
 
 		if #items == 0 then
 			resolve()
@@ -62,7 +62,8 @@ function Source:get_completions(ctx, resolve)
 		resolve({
 			items = items,
 			is_incomplete_forward = true,
-			is_incomplete_backward = true,
+			-- Only re-trigger backwards when a path separator was typed
+			is_incomplete_backward = parsed.prefix:sub(-2) == "__",
 		})
 	end)
 end

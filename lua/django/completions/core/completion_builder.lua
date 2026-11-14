@@ -47,6 +47,9 @@ local RELATIONS_ALL = {
 -- Method configuration
 -- =============================================================================
 
+-- arg_style describes how the method takes field names:
+--   "keyword" - filter(title=...)            (the default)
+--   "string"  - order_by("title"), values("title")
 local METHOD_CONFIG = {
 	-- Filter-style: fields + lookups + all relations
 	filter = { fields = true, lookups = true, relations = RELATIONS_ALL },
@@ -58,19 +61,23 @@ local METHOD_CONFIG = {
 	-- Create/Update: fields only (no traversal)
 	create = { fields = true, lookups = false, relations = nil },
 	update = { fields = true, lookups = false, relations = nil },
+	bulk_create = { fields = true, lookups = false, relations = nil },
 
 	-- Field-only: fields + traversal (no lookups)
-	values = { fields = true, lookups = false, relations = RELATIONS_ALL },
-	values_list = { fields = true, lookups = false, relations = RELATIONS_ALL },
-	only = { fields = true, lookups = false, relations = RELATIONS_SELECT },
-	defer = { fields = true, lookups = false, relations = RELATIONS_SELECT },
+	values = { fields = true, lookups = false, relations = RELATIONS_ALL, arg_style = "string" },
+	values_list = { fields = true, lookups = false, relations = RELATIONS_ALL, arg_style = "string" },
+	only = { fields = true, lookups = false, relations = RELATIONS_SELECT, arg_style = "string" },
+	defer = { fields = true, lookups = false, relations = RELATIONS_SELECT, arg_style = "string" },
 
 	-- Relations-only
-	select_related = { fields = false, lookups = false, relations = RELATIONS_SELECT },
-	prefetch_related = { fields = false, lookups = false, relations = RELATIONS_PREFETCH },
+	select_related = { fields = false, lookups = false, relations = RELATIONS_SELECT, arg_style = "string" },
+	prefetch_related = { fields = false, lookups = false, relations = RELATIONS_PREFETCH, arg_style = "string" },
 
 	-- Order-style
-	order_by = { fields = true, lookups = false, relations = RELATIONS_ALL },
+	order_by = { fields = true, lookups = false, relations = RELATIONS_ALL, arg_style = "string" },
+	latest = { fields = true, lookups = false, relations = nil, arg_style = "string" },
+	earliest = { fields = true, lookups = false, relations = nil, arg_style = "string" },
+	in_bulk = { fields = true, lookups = false, relations = nil },
 
 	-- Annotation: field references for F() expressions
 	annotate = { fields = true, lookups = false, relations = RELATIONS_ALL },
@@ -278,8 +285,9 @@ end
 ---@param model_name string Model name (e.g., "Post")
 ---@param method string QuerySet method (e.g., "filter")
 ---@param prefix string User input prefix (e.g., "author__")
+---@param arg_kind string|nil Argument slot being typed (see ts_context)
 ---@return table[] items Blink completion items
-function M.build(model_name, method, prefix)
+function M.build(model_name, method, prefix, arg_kind)
 	local model_data = ModelData.get_instance()
 	if not model_data then
 		return {}
@@ -290,19 +298,48 @@ function M.build(model_name, method, prefix)
 		return {}
 	end
 
+	local style = M.__arg_style(config, arg_kind)
+	if not style then
+		return {}
+	end
+
 	local resolved = resolve_path(model_name, prefix, model_data)
 
 	-- Terminal field case: show lookups only
 	if resolved.field then
-		return M.__build_lookup_items(resolved, config, model_data)
+		return M.__build_lookup_items(resolved, config, style, model_data)
 	end
 
 	-- Model case: show fields
 	if resolved.model then
-		return M.__build_field_items(resolved, config, model_data)
+		return M.__build_field_items(resolved, config, style, model_data)
 	end
 
 	return {}
+end
+
+--- Decide how the current argument slot should be completed
+--- Returns nil when the slot holds something else than a field name, for
+--- example a value string in filter(title="...").
+---@param config table Method configuration
+---@param arg_kind string|nil
+---@return string|nil style "keyword"|"string"
+function M.__arg_style(config, arg_kind)
+	local configured = config.arg_style or "keyword"
+
+	if arg_kind == nil or arg_kind == "bare" then
+		return configured
+	end
+
+	if arg_kind == "keyword" then
+		return "keyword"
+	end
+
+	if arg_kind == "positional" or arg_kind == "string" then
+		return configured == arg_kind and arg_kind or nil
+	end
+
+	return nil
 end
 
 -- =============================================================================
@@ -312,10 +349,11 @@ end
 --- Build lookup completion items for a terminal field
 ---@param resolved ResolveResult
 ---@param config table Method configuration
+---@param style string Argument style
 ---@param model_data ModelData
 ---@return table[]
-function M.__build_lookup_items(resolved, config, model_data)
-	if not config.lookups then
+function M.__build_lookup_items(resolved, config, style, model_data)
+	if not config.lookups or style ~= "keyword" then
 		return {}
 	end
 
@@ -342,16 +380,23 @@ end
 --- Build field completion items for a model
 ---@param resolved ResolveResult
 ---@param config table Method configuration
+---@param style string Argument style
 ---@param model_data ModelData
 ---@return table[]
-function M.__build_field_items(resolved, config, model_data)
+function M.__build_field_items(resolved, config, style, model_data)
 	local model = model_data:get_model(resolved.model)
 	if not model or not model.fields then
 		return {}
 	end
 
 	local items = {}
-	for name, field in pairs(model.fields) do
+
+	if config.fields and model.pk then
+		table.insert(items, M.__make_pk_item(resolved.model, model.pk, resolved.label_prefix, model_data))
+	end
+
+	for _, name in ipairs(vim.fn.sort(vim.tbl_keys(model.fields))) do
+		local field = model.fields[name]
 		local is_relation = field.related_model ~= nil
 
 		-- Filter by relation type
@@ -370,7 +415,7 @@ function M.__build_field_items(resolved, config, model_data)
 		table.insert(items, make_field_item(name, field, resolved.label_prefix, resolved.model, model_data))
 
 		-- Add lookup items (non-relation fields only)
-		if config.lookups and not is_relation then
+		if config.lookups and style == "keyword" and not is_relation then
 			for _, lookup in ipairs(model_data:get_lookups_for_type(field.type)) do
 				table.insert(
 					items,
@@ -383,6 +428,34 @@ function M.__build_field_items(resolved, config, model_data)
 	end
 
 	return items
+end
+
+--- Build the pk alias completion item
+---@param model_name string
+---@param pk_name string Primary key field name
+---@param label_prefix string
+---@param model_data ModelData
+---@return table
+function M.__make_pk_item(model_name, pk_name, label_prefix, model_data)
+	local pk_field = model_data:get_field(model_name, pk_name)
+	local pk_type = pk_field and pk_field.type or "AutoField"
+
+	return {
+		label = label_prefix .. "pk",
+		kind_name = M.KIND_NAME,
+		kind_icon = M.KIND_ICON,
+		kind_hl = M.KIND_HL,
+		detail = pk_type .. " (pk alias)",
+		documentation = {
+			kind = "markdown",
+			value = string.format(
+				"```python\nclass %s:\n    pk = %s  # alias of %s\n```",
+				model_name,
+				pk_type,
+				pk_name
+			),
+		},
+	}
 end
 
 return M

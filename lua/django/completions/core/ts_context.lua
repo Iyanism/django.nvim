@@ -16,6 +16,7 @@ local imports = require("django.completions.core.imports")
 ---@field prefix string Path typed so far ("author__username__ie")
 ---@field arg_kind "keyword"|"positional"|"string"|"bare"|"none"
 ---@field chain string[] Flattened receiver chain
+---@field scope TSNode|nil Enclosing function or class
 
 --- Get the parsed root node of a buffer
 --- The tree has to be parsed explicitly: vim.treesitter.get_node() only looks
@@ -320,20 +321,18 @@ function M.__argument(anchor, attribute, row, col, bufnr)
 	local keyword = M.__ancestor(node, "keyword_argument")
 	if keyword then
 		local name = keyword:field("name")[1]
-		local value = keyword:field("value")[1]
 
 		if name then
 			local name_row, name_col = name:start()
-			local value_row, value_col = nil, nil
+			local name_end_row, name_end_col = name:end_()
 
-			if value then
-				value_row, value_col = value:start()
+			-- Past the name the cursor sits on the value, which is not a path
+			if name_row == row and name_col <= col and col <= name_end_col then
+				return "keyword", M.__identifier_prefix(name, row, col, bufnr)
 			end
 
-			local after_name = value_row == nil or value_row > row or (value_row == row and value_col >= col)
-
-			if (name_row < row or (name_row == row and name_col <= col)) and after_name then
-				return "keyword", M.__identifier_prefix(name, row, col, bufnr)
+			if name_end_row ~= row then
+				return "none", ""
 			end
 
 			return "none", ""
@@ -474,6 +473,11 @@ function M.__incomplete_argument(node, attribute, row, col, bufnr)
 
 		local _, candidate_col = candidate:end_()
 		if M.__char(bufnr, row, candidate_col) == "=" then
+			-- The cursor already moved past the equals sign: value position
+			if col > candidate_col then
+				return "none", ""
+			end
+
 			return "keyword", M.__identifier_prefix(candidate, row, col, bufnr)
 		end
 
@@ -529,12 +533,14 @@ function M.__receiver(bufnr, chain, scope)
 	return nil
 end
 
---- Resolve the ORM completion context from the syntax tree
+--- Analyse the syntax around the cursor
+--- The model is only reported when the receiver can be resolved; the rest of
+--- the shape (method, prefix, argument kind) is always available.
 --- @param bufnr number
 --- @param row number 0-indexed row
 --- @param col number 0-indexed byte column
 --- @return DjangoOrmContext|nil
-function M.resolve(bufnr, row, col)
+function M.analyze(bufnr, row, col)
 	local anchor = M.__node_at(bufnr, row, col)
 	if not anchor then
 		return nil
@@ -545,16 +551,13 @@ function M.resolve(bufnr, row, col)
 		return nil
 	end
 
-	local scope = M.__scope(anchor)
-	local model_name = M.__receiver(bufnr, chain, scope)
-	if not model_name then
-		return nil
-	end
-
 	local arg_kind, prefix = M.__argument(anchor, attribute, row, col, bufnr)
 	if arg_kind == "none" then
 		return nil
 	end
+
+	local scope = M.__scope(anchor)
+	local model_name = M.__receiver(bufnr, chain, scope)
 
 	return {
 		model_name = model_name,
@@ -562,7 +565,23 @@ function M.resolve(bufnr, row, col)
 		prefix = prefix,
 		arg_kind = arg_kind,
 		chain = chain,
+		scope = scope,
 	}
+end
+
+--- Resolve the ORM completion context from the syntax tree
+--- @param bufnr number
+--- @param row number 0-indexed row
+--- @param col number 0-indexed byte column
+--- @return DjangoOrmContext|nil
+function M.resolve(bufnr, row, col)
+	local context = M.analyze(bufnr, row, col)
+
+	if not context or not context.model_name then
+		return nil
+	end
+
+	return context
 end
 
 --- Whether the buffer has a usable python parser

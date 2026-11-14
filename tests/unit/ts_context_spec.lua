@@ -40,13 +40,11 @@ helpers.describe("ts_context", function()
 		helpers.eq("bare", context.arg_kind)
 	end)
 
-	helpers.it("resolves a keyword argument without a value", function()
+	helpers.it("does not complete the value of a keyword argument", function()
 		skip_without_parser()
-		local context = resolve("Post.objects.filter(title=")
-		helpers.ok(context ~= nil, "expected a context")
-		helpers.eq("Post", context.model_name)
-		helpers.eq("filter", context.method)
-		helpers.eq("title", context.prefix)
+		helpers.eq(nil, resolve("Post.objects.filter(title="))
+		helpers.eq(nil, resolve('Post.objects.filter(title="'))
+		helpers.eq(nil, resolve('Post.objects.filter(title="x"'))
 	end)
 
 	helpers.it("resolves a trailing separator", function()
@@ -58,23 +56,23 @@ helpers.describe("ts_context", function()
 
 	helpers.it("resolves a nested path", function()
 		skip_without_parser()
-		local context = resolve("Post.objects.filter(author__username__iexact=")
+		local context = resolve("Post.objects.filter(author__username__iexa")
 		helpers.ok(context ~= nil, "expected a context")
-		helpers.eq("author__username__iexact", context.prefix)
+		helpers.eq("author__username__iexa", context.prefix)
 	end)
 
 	helpers.it("resolves a chained call", function()
 		skip_without_parser()
-		local context = resolve('Comment.objects.filter(post__title__icontains="a").exclude(status=')
+		local context = resolve('Comment.objects.filter(post__title__icontains="a").exclude(stat')
 		helpers.ok(context ~= nil, "expected a context")
 		helpers.eq("Comment", context.model_name)
 		helpers.eq("exclude", context.method)
-		helpers.eq("status", context.prefix)
+		helpers.eq("stat", context.prefix)
 	end)
 
 	helpers.it("resolves a queryset chained on a manager call", function()
 		skip_without_parser()
-		local context = resolve("Post.objects.all().filter(title=")
+		local context = resolve("Post.objects.all().filter(tit")
 		helpers.ok(context ~= nil, "expected a context")
 		helpers.eq("Post", context.model_name)
 		helpers.eq("filter", context.method)
@@ -91,10 +89,10 @@ helpers.describe("ts_context", function()
 
 	helpers.it("resolves write methods", function()
 		skip_without_parser()
-		local context = resolve("Post.objects.create(title=")
+		local context = resolve("Post.objects.create(tit")
 		helpers.ok(context ~= nil, "expected a context")
 		helpers.eq("create", context.method)
-		helpers.eq("title", context.prefix)
+		helpers.eq("tit", context.prefix)
 	end)
 
 	helpers.it("resolves an empty argument list", function()
@@ -173,8 +171,8 @@ helpers.describe("ts_context", function()
 		skip_without_parser()
 		local context = resolve_lines({
 			"from blog.models import Post as P",
-			"P.objects.filter(title=",
-		}, 1, #"P.objects.filter(title=")
+			"P.objects.filter(tit",
+		}, 1, #"P.objects.filter(tit")
 		helpers.ok(context ~= nil, "expected a context")
 		helpers.eq("Post", context.model_name)
 		helpers.eq("filter", context.method)
@@ -184,8 +182,8 @@ helpers.describe("ts_context", function()
 		skip_without_parser()
 		local context = resolve_lines({
 			"from blog.models import Post",
-			"Post.objects.filter(title=",
-		}, 1, #"Post.objects.filter(title=")
+			"Post.objects.filter(tit",
+		}, 1, #"Post.objects.filter(tit")
 		helpers.ok(context ~= nil, "expected a context")
 		helpers.eq("Post", context.model_name)
 	end)
@@ -194,8 +192,8 @@ helpers.describe("ts_context", function()
 		skip_without_parser()
 		local context = resolve_lines({
 			"qs = Post.objects.all()",
-			"qs.filter(title=",
-		}, 1, #"qs.filter(title=")
+			"qs.filter(tit",
+		}, 1, #"qs.filter(tit")
 		helpers.ok(context ~= nil, "expected a context")
 		helpers.eq("Post", context.model_name)
 		helpers.eq("filter", context.method)
