@@ -33,6 +33,10 @@ M.default = {
 		position = "right", -- "bottom", "top", "left", "right", "float"
 		env = {}, -- explicit environment variables (e.g. { DJANGO_SETTINGS_MODULE = "myproject.settings" })
 	},
+	manage = {
+		position = "right", -- terminal position for manage.py commands
+		auto_close = false, -- keep output visible after the command finishes
+	},
 }
 
 M.current = vim.deepcopy(M.default)

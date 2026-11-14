@@ -43,6 +43,23 @@ vim.api.nvim_create_user_command("DjangoDoctor", function()
 	require("django.health").open_report()
 end, { desc = "Diagnose the django.nvim environment" })
 
+for _, command in ipairs(require("django.manage").commands) do
+	vim.api.nvim_create_user_command(command.name, function(opts)
+		local args = vim.deepcopy(command.args)
+		vim.list_extend(args, opts.fargs or {})
+		require("django.manage").run(args)
+	end, { nargs = command.nargs or 0, desc = command.desc })
+end
+
+vim.api.nvim_create_user_command("DjangoManage", function(opts)
+	local args = opts.fargs or {}
+	if #args == 0 then
+		vim.notify("Usage: :DjangoManage <manage.py args>", vim.log.levels.WARN)
+		return
+	end
+	require("django.manage").run(args)
+end, { nargs = "*", desc = "Run a manage.py command" })
+
 local keymaps = {
 	{
 		key = "<leader>Djv",
