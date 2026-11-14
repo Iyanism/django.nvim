@@ -41,6 +41,10 @@ M.default = {
 		enabled = true, -- static ORM path diagnostics on write
 		debounce_ms = 300, -- delay before a buffer is checked
 	},
+	lsp = {
+		ty = { enabled = false }, -- start ty (https://github.com/astral-sh/ty) for Python buffers
+		pogo = { enabled = false }, -- start pogo (Django ORM aware server) for Python buffers
+	},
 }
 
 M.current = vim.deepcopy(M.default)

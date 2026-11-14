@@ -3,6 +3,7 @@
 local M = {}
 
 local utils = require("django.utils")
+local config = require("django.config")
 
 --- @class DjangoHealthItem
 --- @field name string
@@ -204,16 +205,21 @@ function M.probe(on_done)
 	if ty ~= "" then
 		schedule(3, { ty, "--version" }, function(result)
 			return M.__probe_item("ty", result, function(version)
-				return version
+				return string.format("%s (%s)", version, M.__preset_state("ty"))
 			end, "uv tool install ty")
 		end)
 	else
-		immediate(3, { name = "ty", status = "warn", message = "not found on PATH", hint = "uv tool install ty" })
+		immediate(3, {
+			name = "ty",
+			status = "warn",
+			message = "not found on PATH",
+			hint = "uv tool install ty",
+		})
 	end
 
 	local pogo = vim.fn.exepath("pogo")
 	if pogo ~= "" then
-		immediate(4, { name = "pogo", status = "ok", message = pogo })
+		immediate(4, { name = "pogo", status = "ok", message = pogo .. " (" .. M.__preset_state("pogo") .. ")" })
 	else
 		immediate(4, {
 			name = "pogo",
@@ -370,6 +376,20 @@ function M.__probe_item(name, result, on_success, hint)
 
 	local version = M.__first_line(result.stdout) or "installed"
 	return { name = name, status = "ok", message = on_success(version) }
+end
+
+--- Describe whether an LSP preset is enabled
+--- @param name string
+--- @return string
+function M.__preset_state(name)
+	local lsp = config.current.lsp or {}
+	local preset = lsp[name]
+
+	if preset and preset.enabled then
+		return "preset enabled"
+	end
+
+	return "preset disabled"
 end
 
 --- Describe how the interpreter was resolved
