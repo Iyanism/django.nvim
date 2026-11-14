@@ -85,21 +85,21 @@ function M.__fetch(script_name, cache_name, opts)
 	state.set_fetching(cache_name, true)
 
 	local ok, result = pcall(function()
-		return M.__fetch_and_store(script_name, cache_name, silent)
+		return M.__fetch_and_store(script_name, cache_name, silent, root)
 	end)
 
 	-- Always reset fetching state, even if the async fetch failed
 	state.set_fetching(cache_name, false)
 
 	if not ok then
-		cache.discard(cache_name)
+		cache.discard(cache_name, root)
 		if not silent then
 			vim.notify(
 				"Failed to refresh Django " .. cache_name .. ": " .. tostring(result),
 				vim.log.levels.ERROR
 			)
 		end
-		return cache.read(cache_name)
+		return cache.read(cache_name, root)
 	end
 
 	return result
@@ -109,8 +109,9 @@ end
 --- @param script_name string Script filename
 --- @param cache_name string Cache identifier
 --- @param silent boolean Suppress notifications
+--- @param root string|nil Project root pinned by the caller
 --- @return table|nil data
-function M.__fetch_and_store(script_name, cache_name, silent)
+function M.__fetch_and_store(script_name, cache_name, silent, root)
 	if not silent then
 		vim.notify("Fetching Django " .. cache_name .. "...", vim.log.levels.INFO)
 	end

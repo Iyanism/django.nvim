@@ -39,6 +39,10 @@ vim.api.nvim_create_user_command("DjangoShellClose", function()
 	require("django.shell").close()
 end, {})
 
+vim.api.nvim_create_user_command("DjangoDoctor", function()
+	require("django.health").open_report()
+end, { desc = "Diagnose the django.nvim environment" })
+
 local keymaps = {
 	{
 		key = "<leader>Djv",

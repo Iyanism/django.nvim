@@ -121,9 +121,143 @@ function M.get_python_command_string()
 end
 
 --- Get the python executable path (deprecated, use get_python_command)
+--- Unlike get_python_executable(), this may return a command (e.g. "uv run python")
 --- @return string
 function M.get_python_path()
 	return table.concat(M.get_python_command(), " ")
+end
+
+--- Resolve a concrete interpreter path (never a command)
+--- Tools that require a path (e.g. pogo's djangoOrm.pythonPath) must use this.
+--- @return string|nil
+function M.get_python_executable()
+	local configured_path = M.__as_python_path(require("django.config").current.python)
+	if configured_path then
+		return configured_path
+	end
+
+	local root = M.get_project_root()
+	if root then
+		local project_python = M.__find_venv_python(root .. "/.venv")
+			or M.__find_venv_python(root .. "/venv")
+		if project_python then
+			return project_python
+		end
+	end
+
+	local env_python = M.__find_venv_python(vim.env.VIRTUAL_ENV)
+		or M.__find_venv_python(vim.env.CONDA_PREFIX)
+	if env_python then
+		return env_python
+	end
+
+	if vim.g.python3_host_prog and vim.g.python3_host_prog ~= "" then
+		return vim.g.python3_host_prog
+	end
+
+	return nil
+end
+
+--- Get the Django settings module for the current project
+--- @return string|nil
+function M.get_settings_module()
+	local from_env = vim.env.DJANGO_SETTINGS_MODULE
+	if from_env and from_env ~= "" then
+		return from_env
+	end
+
+	local root = M.get_project_root()
+	if not root then
+		return nil
+	end
+
+	local manage_py = root .. "/manage.py"
+	if vim.fn.filereadable(manage_py) ~= 1 then
+		return nil
+	end
+
+	local ok, lines = pcall(vim.fn.readfile, manage_py)
+	if not ok then
+		return nil
+	end
+
+	for _, line in ipairs(lines) do
+		if line:find("DJANGO_SETTINGS_MODULE", 1, true) then
+			local module = M.__parse_settings_module(line)
+			if module then
+				return module
+			end
+		end
+	end
+
+	return nil
+end
+
+--- Build an argv list that runs a Python snippet with the resolved interpreter
+--- @param snippet string Python source
+--- @return string[] argv
+function M.get_python_argv(snippet)
+	local argv = vim.deepcopy(M.get_python_command())
+	vim.list_extend(argv, { "-c", snippet })
+	return argv
+end
+
+--- Check if a treesitter parser is available for a language
+--- @param lang string
+--- @return boolean
+function M.has_treesitter_parser(lang)
+	local ok, info = pcall(vim.treesitter.language.inspect, lang)
+	return ok and info ~= nil
+end
+
+--- Extract a concrete interpreter path from the configured value
+--- A command table such as { "uv", "run", "python" } has no single path.
+--- The path is not required to exist: probes report a broken interpreter.
+--- @param configured string|string[]|nil
+--- @return string|nil
+function M.__as_python_path(configured)
+	if not configured then
+		return nil
+	end
+
+	local candidate
+	if type(configured) == "table" then
+		if #configured ~= 1 then
+			return nil
+		end
+		candidate = configured[1]
+	else
+		candidate = configured
+	end
+
+	if type(candidate) ~= "string" or candidate == "" then
+		return nil
+	end
+
+	-- Bare command names ("python3") are not paths
+	if not candidate:find("/") and not candidate:find("\\") then
+		return nil
+	end
+
+	return candidate
+end
+
+--- Parse a DJANGO_SETTINGS_MODULE assignment from a manage.py line
+--- @param line string
+--- @return string|nil
+function M.__parse_settings_module(line)
+	if not line:find("DJANGO_SETTINGS_MODULE", 1, true) then
+		return nil
+	end
+
+	local matches = {}
+	for value in line:gmatch("[\"']([^\"']+)[\"']") do
+		if value ~= "DJANGO_SETTINGS_MODULE" then
+			table.insert(matches, value)
+		end
+	end
+
+	return matches[#matches]
 end
 
 --- Find the python executable inside a virtual environment directory

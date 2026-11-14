@@ -16,6 +16,14 @@ function M.__get_project_hash(root)
 	return vim.fn.sha256(root):sub(1, 8)
 end
 
+--- Get the cache file path for a cache name (public)
+--- @param cache_name string
+--- @param root string|nil Project root override
+--- @return string
+function M.path(cache_name, root)
+	return M.__get_path(cache_name, root)
+end
+
 --- Get cache file path for a cache name
 --- @param cache_name string
 --- @param root string|nil Project root override
