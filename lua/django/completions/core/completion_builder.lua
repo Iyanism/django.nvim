@@ -305,14 +305,19 @@ function M.build(model_name, method, prefix, arg_kind)
 
 	local resolved = resolve_path(model_name, prefix, model_data)
 
-	-- Terminal field case: show lookups only
-	if resolved.field then
+	-- A lookup was already typed: keep offering lookups of the same field
+	if resolved.lookup then
 		return M.__build_lookup_items(resolved, config, style, model_data)
 	end
 
-	-- Model case: show fields
+	-- A relation was traversed: show the fields of the related model
 	if resolved.model then
 		return M.__build_field_items(resolved, config, style, model_data)
+	end
+
+	-- Terminal field case: show lookups only
+	if resolved.field then
+		return M.__build_lookup_items(resolved, config, style, model_data)
 	end
 
 	return {}

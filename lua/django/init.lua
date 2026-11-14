@@ -11,6 +11,14 @@ function M.setup(opts)
 	require("django.annotations.views").setup()
 
 	require("django.watcher").setup()
+	require("django.diagnostics.orm").setup()
+
+	vim.api.nvim_create_autocmd("User", {
+		pattern = "DjangoDataRefreshed",
+		callback = function()
+			require("django.diagnostics.orm").refresh()
+		end,
+	})
 end
 
 function M.refresh_all()

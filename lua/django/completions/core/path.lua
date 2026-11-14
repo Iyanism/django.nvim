@@ -117,6 +117,12 @@ function M.resolve(model_name, segments, model_data)
 					kind = "invalid-lookup"
 				end
 
+				-- Keep the partial result: diagnostics need to know which field
+				-- the path stopped at.
+				result.field = last_field
+				result.field_name = last_field_name
+				result.field_model = last_field_model
+
 				return M.__fail(result, {
 					kind = kind,
 					message = M.__error_message(kind, segment, last_field_name, current_model or last_field_model),
@@ -127,12 +133,11 @@ function M.resolve(model_name, segments, model_data)
 		end
 	end
 
-	-- A relation keeps the traversal open, only concrete fields terminate a path
-	if last_field and not last_field.related_model then
-		result.field = last_field
-		result.field_name = last_field_name
-		result.field_model = last_field_model
-	end
+	-- Report the terminal field even when it is a relation: callers use it to
+	-- tell a traversal (result.model is set) from a lookup target.
+	result.field = last_field
+	result.field_name = last_field_name
+	result.field_model = last_field_model
 
 	return result
 end
@@ -147,6 +152,8 @@ function M.validate(model_name, path, model_data)
 end
 
 --- Mark a result as failed
+--- The partial resolution (field, field_name, field_model) is kept so callers
+--- can explain where the path went wrong.
 --- @param result DjangoPathResult
 --- @param error DjangoPathError
 --- @return DjangoPathResult
@@ -154,9 +161,6 @@ function M.__fail(result, error)
 	result.ok = false
 	result.error = error
 	result.model = nil
-	result.field = nil
-	result.field_name = nil
-	result.field_model = nil
 	result.lookup = nil
 	return result
 end

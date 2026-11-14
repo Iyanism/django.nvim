@@ -37,6 +37,10 @@ M.default = {
 		position = "right", -- terminal position for manage.py commands
 		auto_close = false, -- keep output visible after the command finishes
 	},
+	diagnostics = {
+		enabled = true, -- static ORM path diagnostics on write
+		debounce_ms = 300, -- delay before a buffer is checked
+	},
 }
 
 M.current = vim.deepcopy(M.default)

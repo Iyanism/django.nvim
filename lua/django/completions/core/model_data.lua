@@ -71,6 +71,23 @@ function ModelData.get_instance()
 	return instance
 end
 
+--- Get the schema without ever running the introspection script
+--- Safe to call from synchronous contexts: an empty cache yields nil.
+---@return ModelData|nil
+function ModelData.peek()
+	if instance then
+		return instance
+	end
+
+	local data = fetcher.get_cached_data(CACHE_NAME)
+	if not data or vim.tbl_isempty(data) then
+		return nil
+	end
+
+	instance = ModelData.new(data)
+	return instance
+end
+
 --- Clear cached instance
 function ModelData.clear()
 	instance = nil

@@ -39,6 +39,10 @@ vim.api.nvim_create_user_command("DjangoShellClose", function()
 	require("django.shell").close()
 end, {})
 
+vim.api.nvim_create_user_command("DjangoDiagnostics", function()
+	require("django.diagnostics.orm").publish(0)
+end, { desc = "Check the ORM paths of the current buffer" })
+
 vim.api.nvim_create_user_command("DjangoDoctor", function()
 	require("django.health").open_report()
 end, { desc = "Diagnose the django.nvim environment" })
