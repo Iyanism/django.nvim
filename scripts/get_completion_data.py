@@ -492,6 +492,7 @@ def get_completion_data():
         models_data[model_name] = {
             "app_label": app_label,
             "module": model.__module__,
+            "pk": model._meta.pk.name if model._meta.pk else None,
             "fields": fields,
         }
 

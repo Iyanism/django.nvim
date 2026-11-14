@@ -1,4 +1,5 @@
 local ModelData = require("django.completions.core.model_data")
+local path = require("django.completions.core.path")
 
 local M = {}
 
@@ -116,45 +117,27 @@ end
 ---@field field_model string|nil Model containing the terminal field
 
 --- Follow path to find current model or terminal field
+--- The resolved segments are the complete ones (the segment being typed is excluded)
 ---@param model_name string Starting model
 ---@param prefix string User input prefix
 ---@param model_data ModelData
 ---@return ResolveResult
 local function resolve_path(model_name, prefix, model_data)
-	local path, label_prefix = split_prefix(prefix)
+	local parts, label_prefix = split_prefix(prefix)
 
-	if #path == 0 then
-		return { model = model_name, label_prefix = "" }
+	local resolved = path.resolve(model_name, parts, model_data)
+
+	if not resolved.ok then
+		return { model = nil, label_prefix = label_prefix }
 	end
 
-	local current_model = model_name
-	for i, segment in ipairs(path) do
-		local field = model_data:get_field(current_model, segment)
-		if not field then
-			return { model = nil, label_prefix = label_prefix }
-		end
-
-		if field.related_model then
-			-- Follow relation
-			current_model = field.related_model
-		else
-			-- Terminal field (non-relation) - return for lookup completion
-			if i == #path then
-				return {
-					model = nil,
-					label_prefix = label_prefix,
-					field = field,
-					field_name = segment,
-					field_model = current_model,
-				}
-			else
-				-- Invalid path: non-relation field in middle
-				return { model = nil, label_prefix = label_prefix }
-			end
-		end
-	end
-
-	return { model = current_model, label_prefix = label_prefix }
+	return {
+		model = resolved.model,
+		label_prefix = label_prefix,
+		field = resolved.field,
+		field_name = resolved.field_name,
+		field_model = resolved.field_model,
+	}
 end
 
 --- Build documentation for a field

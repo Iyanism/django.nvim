@@ -21,6 +21,7 @@
 ---@class ModelInfo
 ---@field app_label string
 ---@field module string
+---@field pk string|nil Primary key field name
 ---@field fields table<string, FieldInfo>
 
 ---@class LookupMetadata
@@ -120,6 +121,32 @@ function ModelData:get_lookups_for_type(field_type)
 	end
 
 	return result
+end
+
+--- Check whether a name is a valid lookup for a field type
+--- @param lookup string
+--- @param field_type string
+--- @return boolean
+function ModelData:is_lookup(lookup, field_type)
+	for _, name in ipairs(self:get_lookups_for_type(field_type)) do
+		if name == lookup then
+			return true
+		end
+	end
+
+	return false
+end
+
+--- Get the primary key field name of a model
+--- @param model_name string
+--- @return string|nil
+function ModelData:get_pk(model_name)
+	local model = self:get_model(model_name)
+	if not model then
+		return nil
+	end
+
+	return model.pk
 end
 
 --- Get lookup metadata

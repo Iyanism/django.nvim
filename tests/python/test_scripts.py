@@ -95,6 +95,7 @@ def test_get_completion_data_shape() -> None:
     assert post is not None, "expected the blog Post model"
     assert post["app_label"] == "blog"
     assert post["module"].endswith("blog.models")
+    assert post["pk"] == "id"
 
     fields = post["fields"]
     assert fields
