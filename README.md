@@ -144,10 +144,10 @@ Open Django's interactive shell directly from Neovim using Snacks.nvim terminal.
 
 ```lua
 -- In normal mode: toggle shell
-<leader>djs
+<leader>Djs
 
 -- In visual mode: send selected code to shell
-<leader>djs
+<leader>Djs
 ```
 
 ### Refresh
@@ -176,11 +176,11 @@ Automatically or manually refresh data.
 
 | Keymap | Description |
 |--------|-------------|
-| `<leader>djv` | Browse Django views |
-| `<leader>djm` | Browse Django models |
-| `<leader>djr` | Refresh all data |
-| `<leader>djc` | Clear all cached data |
-| `<leader>djs` | Toggle Django shell (normal) / Send selection (visual) |
+| `<leader>Djv` | Browse Django views |
+| `<leader>Djm` | Browse Django models |
+| `<leader>Djr` | Refresh all data |
+| `<leader>Djc` | Clear all cached data |
+| `<leader>Djs` | Toggle Django shell (normal) / Send selection (visual) |
 
 ### Picker Keybindings
 

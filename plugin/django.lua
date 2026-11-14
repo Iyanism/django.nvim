@@ -41,7 +41,7 @@ end, {})
 
 local keymaps = {
 	{
-		key = "<leader>djv",
+		key = "<leader>Djv",
 		mode = "n",
 		action = function()
 			require("django.pickers.views").show()
@@ -50,7 +50,7 @@ local keymaps = {
 		icon = "󰖟",
 	},
 	{
-		key = "<leader>djm",
+		key = "<leader>Djm",
 		mode = "n",
 		action = function()
 			require("django.pickers.models").show()
@@ -59,7 +59,7 @@ local keymaps = {
 		icon = "󰆼",
 	},
 	{
-		key = "<leader>djr",
+		key = "<leader>Djr",
 		mode = "n",
 		action = function()
 			require("django").refresh_all()
@@ -68,7 +68,7 @@ local keymaps = {
 		icon = "󰑓",
 	},
 	{
-		key = "<leader>djc",
+		key = "<leader>Djc",
 		mode = "n",
 		action = function()
 			require("django").clear_all_cache()
@@ -77,7 +77,7 @@ local keymaps = {
 		icon = "󰃨",
 	},
 	{
-		key = "<leader>djs",
+		key = "<leader>Djs",
 		mode = "n",
 		action = function()
 			require("django.shell").toggle()
@@ -86,7 +86,7 @@ local keymaps = {
 		icon = "",
 	},
 	{
-		key = "<leader>djs",
+		key = "<leader>Djs",
 		mode = "v",
 		action = function()
 			require("django.shell").send_selection()
@@ -103,7 +103,7 @@ end
 local ok, which_key = pcall(require, "which-key")
 if ok then
 	local wk_mappings = {
-		{ "<leader>dj", group = "django.nvim", icon = "" },
+		{ "<leader>Dj", group = "django.nvim", icon = "" },
 	}
 	for _, map in ipairs(keymaps) do
 		table.insert(wk_mappings, { map.key, desc = map.desc, icon = map.icon, mode = map.mode })
