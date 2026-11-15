@@ -1,26 +1,59 @@
 local helpers = require("helpers")
+local ModelData = require("django.completions.core.model_data")
 local ts_context = require("django.completions.core.ts_context")
 local utils = require("django.utils")
+
+--- Minimal runtime schema used to follow instance relations
+--- @return ModelData
+local function fixture()
+	return ModelData.new({
+		models = {
+			Post = {
+				app_label = "blog",
+				pk = "id",
+				fields = {
+					id = { type = "AutoField" },
+					title = { type = "CharField" },
+					author = { type = "ForeignKey", related_model = "User" },
+					comments = { type = "ManyToOneRel", related_model = "Comment" },
+				},
+			},
+			User = {
+				app_label = "auth",
+				pk = "id",
+				fields = { id = { type = "AutoField" }, username = { type = "CharField" } },
+			},
+			Comment = {
+				app_label = "blog",
+				pk = "id",
+				fields = { id = { type = "AutoField" }, content = { type = "TextField" } },
+			},
+		},
+		lookups = { base = { "exact" }, by_type = {} },
+	})
+end
 
 --- Resolve a context for a single line of code
 --- @param code string
 --- @param col number|nil Cursor column (defaults to the end of the line)
+--- @param model_data ModelData|nil
 --- @return DjangoOrmContext|nil
-local function resolve(code, col)
+local function resolve(code, col, model_data)
 	local bufnr = vim.api.nvim_create_buf(false, true)
 	vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { code })
-	return ts_context.resolve(bufnr, 0, col or #code)
+	return ts_context.resolve(bufnr, 0, col or #code, model_data)
 end
 
 --- Resolve a context for a multi line buffer
 --- @param lines string[]
 --- @param row number
 --- @param col number
+--- @param model_data ModelData|nil
 --- @return DjangoOrmContext|nil
-local function resolve_lines(lines, row, col)
+local function resolve_lines(lines, row, col, model_data)
 	local bufnr = vim.api.nvim_create_buf(false, true)
 	vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
-	return ts_context.resolve(bufnr, row, col)
+	return ts_context.resolve(bufnr, row, col, model_data)
 end
 
 local function skip_without_parser()
@@ -210,6 +243,37 @@ helpers.describe("ts_context", function()
 		if context then
 			helpers.ok(context.model_name ~= "Comment", "must not resolve across scopes")
 		end
+	end)
+
+	helpers.it("follows an instance relation", function()
+		skip_without_parser()
+		local context = resolve_lines({
+			"post = Post.objects.get(pk=1)",
+			"post.comments.filter(tit",
+		}, 1, #"post.comments.filter(tit", fixture())
+		helpers.ok(context ~= nil, "expected a context")
+		helpers.eq("Comment", context.model_name)
+		helpers.eq("filter", context.method)
+	end)
+
+	helpers.it("follows a relation behind a queryset call", function()
+		skip_without_parser()
+		local context = resolve("Post.objects.get(pk=1).comments.filter(tit", nil, fixture())
+		helpers.ok(context ~= nil, "expected a context")
+		helpers.eq("Comment", context.model_name)
+	end)
+
+	helpers.it("follows a relation chain", function()
+		skip_without_parser()
+		local context = resolve("Post.objects.filter(pk=1).first().comments.filter(tit", nil, fixture())
+		helpers.ok(context ~= nil, "expected a context")
+		helpers.eq("Comment", context.model_name)
+		helpers.eq("filter", context.method)
+	end)
+
+	helpers.it("rejects chains that leave the ORM", function()
+		skip_without_parser()
+		helpers.eq(nil, resolve("Post.objects.get(pk=1).title.filter(tit", nil, fixture()))
 	end)
 
 	helpers.it("keeps self unresolved", function()

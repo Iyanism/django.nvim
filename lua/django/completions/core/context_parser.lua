@@ -29,8 +29,9 @@ function M.parse(bufnr, line, col)
 		return nil
 	end
 
-	if shape.model_name and M.is_known_model(shape.model_name) then
-		return M.__context(shape, shape.model_name, "treesitter")
+	local model_name = ts_context.receiver_model(bufnr, shape.chain, shape.scope, ModelData.get_instance())
+	if model_name and M.is_known_model(model_name) then
+		return M.__context(shape, model_name, "treesitter")
 	end
 
 	if not M.__wants_hover(bufnr, shape) then

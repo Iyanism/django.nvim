@@ -122,6 +122,7 @@ end
 ---@field field FieldInfo|nil Terminal field (for lookups)
 ---@field field_name string|nil Terminal field name
 ---@field field_model string|nil Model containing the terminal field
+---@field lookup string|nil Lookup the path already ends with
 
 --- Follow path to find current model or terminal field
 --- The resolved segments are the complete ones (the segment being typed is excluded)
@@ -144,6 +145,7 @@ local function resolve_path(model_name, prefix, model_data)
 		field = resolved.field,
 		field_name = resolved.field_name,
 		field_model = resolved.field_model,
+		lookup = resolved.lookup,
 	}
 end
 
@@ -305,9 +307,9 @@ function M.build(model_name, method, prefix, arg_kind)
 
 	local resolved = resolve_path(model_name, prefix, model_data)
 
-	-- A lookup was already typed: keep offering lookups of the same field
+	-- A lookup cannot be followed by another segment
 	if resolved.lookup then
-		return M.__build_lookup_items(resolved, config, style, model_data)
+		return {}
 	end
 
 	-- A relation was traversed: show the fields of the related model

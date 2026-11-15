@@ -44,12 +44,6 @@ function M.__root(bufnr)
 	return trees[1]:root()
 end
 
---- Invalidate the cached maps of a buffer
---- @param bufnr number
-function M.invalidate(bufnr)
-	cache[bufnr] = nil
-end
-
 --- Build the import alias map of a buffer
 --- Both the imported name and the alias resolve to the real model name.
 --- @param bufnr number
@@ -63,9 +57,19 @@ function M.alias_map(bufnr)
 
 	local aliases = M.__collect_aliases(bufnr)
 
+	M.__prune()
 	cache[bufnr] = { tick = tick, aliases = aliases }
 
 	return aliases
+end
+
+--- Forget the aliases of buffers that no longer exist
+function M.__prune()
+	for cached_bufnr in pairs(cache) do
+		if not vim.api.nvim_buf_is_valid(cached_bufnr) then
+			cache[cached_bufnr] = nil
+		end
+	end
 end
 
 --- Collect the import alias map without touching the cache

@@ -123,6 +123,11 @@ helpers.describe("completion_builder", function()
 		helpers.ok(not set["title__title"], "expected no field completion after a terminal field")
 	end)
 
+	helpers.it("returns nothing after a lookup", function()
+		helpers.eq({}, builder.build("Post", "filter", "title__icontains__", "keyword"))
+		helpers.eq({}, builder.build("Post", "filter", "author__username__iexact__", "keyword"))
+	end)
+
 	helpers.it("returns nothing for an unknown path", function()
 		helpers.eq({}, builder.build("Post", "filter", "adress__", "keyword"))
 	end)

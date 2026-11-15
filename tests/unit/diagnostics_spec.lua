@@ -192,6 +192,17 @@ helpers.describe("diagnostics", function()
 		helpers.eq(28, diagnostics[1].end_col)
 	end)
 
+	helpers.it("reports lookups on string path methods", function()
+		skip_without_parser()
+		local diagnostics = check_line('Post.objects.values("title__icontains")')
+
+		helpers.eq(1, #diagnostics)
+		helpers.eq(orm.CODES.invalid_lookup, diagnostics[1].code)
+		helpers.contains(diagnostics[1].message, "icontains")
+
+		helpers.eq({}, check_line('Post.objects.values("author__username")'))
+	end)
+
 	helpers.it("accepts order_by paths", function()
 		skip_without_parser()
 		helpers.eq({}, check_line('Post.objects.order_by("-title", "author__username")'))
@@ -271,6 +282,22 @@ helpers.describe("diagnostics", function()
 
 		helpers.eq(1, #diagnostics)
 		helpers.eq(1, diagnostics[1].lnum)
+	end)
+
+	helpers.it("resolves instance relations", function()
+		skip_without_parser()
+		local diagnostics = check({
+			"post = Post.objects.get(pk=1)",
+			"post.comments.filter(bogus='x')",
+		})
+
+		helpers.eq(1, #diagnostics)
+		helpers.contains(diagnostics[1].message, "Comment")
+
+		helpers.eq({}, check({
+			"post = Post.objects.get(pk=1)",
+			"post.comments.filter(content='x')",
+		}))
 	end)
 
 	helpers.it("resolves import aliases", function()

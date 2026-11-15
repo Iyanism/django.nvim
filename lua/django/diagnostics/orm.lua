@@ -7,7 +7,6 @@
 local M = {}
 
 local path = require("django.completions.core.path")
-local imports = require("django.completions.core.imports")
 local ts_context = require("django.completions.core.ts_context")
 local ModelData = require("django.completions.core.model_data")
 local config = require("django.config")
@@ -35,7 +34,8 @@ M.SELECT_RELATIONS = {
 
 --- Methods whose arguments are ORM paths
 --- paths: "keyword" | "string"
---- lookups: whether a lookup segment is allowed (create/update take fields)
+--- lookups: whether a lookup segment is allowed (only the filter family is)
+--- relations: restrict the terminal field to a relation type
 --- skip: keyword arguments that are not paths
 M.METHODS = {
 	filter = { paths = "keyword", lookups = true },
@@ -45,15 +45,15 @@ M.METHODS = {
 	update_or_create = { paths = "keyword", lookups = true, skip = { defaults = true } },
 	create = { paths = "keyword", lookups = false },
 	update = { paths = "keyword", lookups = false },
-	values = { paths = "string" },
-	values_list = { paths = "string" },
-	only = { paths = "string" },
-	defer = { paths = "string" },
-	order_by = { paths = "string" },
-	latest = { paths = "string" },
-	earliest = { paths = "string" },
-	select_related = { paths = "string", relations = "select" },
-	prefetch_related = { paths = "string", relations = "any" },
+	values = { paths = "string", lookups = false },
+	values_list = { paths = "string", lookups = false },
+	only = { paths = "string", lookups = false },
+	defer = { paths = "string", lookups = false },
+	order_by = { paths = "string", lookups = false },
+	latest = { paths = "string", lookups = false },
+	earliest = { paths = "string", lookups = false },
+	select_related = { paths = "string", lookups = false, relations = "select" },
+	prefetch_related = { paths = "string", lookups = false, relations = "any" },
 }
 
 --- Matches every method call with an attribute target
@@ -84,6 +84,15 @@ function M.setup()
 		callback = function(args)
 			pending[args.buf] = nil
 			vim.diagnostic.reset(M.NAMESPACE, args.buf)
+		end,
+	})
+
+	-- A schema refresh can fix or reveal errors, so re-check the buffers
+	vim.api.nvim_create_autocmd("User", {
+		group = group,
+		pattern = "DjangoDataRefreshed",
+		callback = function()
+			M.refresh()
 		end,
 	})
 end
@@ -480,16 +489,7 @@ end
 function M.__model_of(bufnr, call, model_data)
 	local fn = call:field("function")[1]
 	local chain = ts_context.__flatten(fn, bufnr)
-	local receiver = chain[1]
-
-	if not receiver or receiver == "()" then
-		return nil
-	end
-
-	local model_name = imports.resolve_name(bufnr, receiver, ts_context.__scope(call))
-	if not model_name and chain[2] == "objects" then
-		model_name = receiver
-	end
+	local model_name = ts_context.receiver_model(bufnr, chain, ts_context.__scope(call), model_data)
 
 	if not model_name or not model_data:get_model(model_name) then
 		return nil

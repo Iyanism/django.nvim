@@ -11,7 +11,7 @@ local M = {}
 local imports = require("django.completions.core.imports")
 
 ---@class DjangoOrmContext
----@field model_name string Model the ORM path is rooted at
+---@field model_name string|nil Model the ORM path is rooted at (set by resolve)
 ---@field method string QuerySet method ("filter", "select_related", ...)
 ---@field prefix string Path typed so far ("author__username__ie")
 ---@field arg_kind "keyword"|"positional"|"string"|"bare"|"none"
@@ -324,15 +324,11 @@ function M.__argument(anchor, attribute, row, col, bufnr)
 
 		if name then
 			local name_row, name_col = name:start()
-			local name_end_row, name_end_col = name:end_()
+			local _, name_end_col = name:end_()
 
-			-- Past the name the cursor sits on the value, which is not a path
+			-- Only the name is a path: past it the cursor sits on the value
 			if name_row == row and name_col <= col and col <= name_end_col then
 				return "keyword", M.__identifier_prefix(name, row, col, bufnr)
-			end
-
-			if name_end_row ~= row then
-				return "none", ""
 			end
 
 			return "none", ""
@@ -533,6 +529,60 @@ function M.__receiver(bufnr, chain, scope)
 	return nil
 end
 
+--- Walk the chain segments between the receiver and the current method
+--- `post.comments.filter(...)` starts at Post and ends at Comment, while
+--- manager and queryset calls (objects, all(), filter(), ...) stay on the
+--- same model.
+--- @param model_name string Model of the receiver
+--- @param segments string[] Chain segments after the receiver, method excluded
+--- @param model_data ModelData|nil
+--- @return string|nil
+function M.__walk_chain(model_name, segments, model_data)
+	local current = model_name
+	local index = 1
+
+	while index <= #segments do
+		local segment = segments[index]
+
+		if segment == "objects" or segment == "()" then
+			index = index + 1
+		elseif segments[index + 1] == "()" then
+			-- A queryset or manager call keeps the model
+			index = index + 2
+		else
+			if not model_data then
+				-- Without the schema a relation cannot be followed
+				return nil
+			end
+
+			local field = model_data:get_field(current, segment)
+			if not field or not field.related_model then
+				return nil
+			end
+
+			current = field.related_model
+			index = index + 1
+		end
+	end
+
+	return current
+end
+
+--- Resolve the model the call chain is rooted at
+--- @param bufnr number
+--- @param chain string[]
+--- @param scope TSNode|nil
+--- @param model_data ModelData|nil Runtime schema, needed to follow relations
+--- @return string|nil
+function M.receiver_model(bufnr, chain, scope, model_data)
+	local model_name = M.__receiver(bufnr, chain, scope)
+	if not model_name then
+		return nil
+	end
+
+	return M.__walk_chain(model_name, vim.list_slice(chain, 2, #chain - 1), model_data)
+end
+
 --- Analyse the syntax around the cursor
 --- The model is only reported when the receiver can be resolved; the rest of
 --- the shape (method, prefix, argument kind) is always available.
@@ -556,16 +606,12 @@ function M.analyze(bufnr, row, col)
 		return nil
 	end
 
-	local scope = M.__scope(anchor)
-	local model_name = M.__receiver(bufnr, chain, scope)
-
 	return {
-		model_name = model_name,
 		method = method,
 		prefix = prefix,
 		arg_kind = arg_kind,
 		chain = chain,
-		scope = scope,
+		scope = M.__scope(anchor),
 	}
 end
 
@@ -573,23 +619,20 @@ end
 --- @param bufnr number
 --- @param row number 0-indexed row
 --- @param col number 0-indexed byte column
+--- @param model_data ModelData|nil Runtime schema, needed to follow relations
 --- @return DjangoOrmContext|nil
-function M.resolve(bufnr, row, col)
+function M.resolve(bufnr, row, col, model_data)
 	local context = M.analyze(bufnr, row, col)
+	if not context then
+		return nil
+	end
 
-	if not context or not context.model_name then
+	context.model_name = M.receiver_model(bufnr, context.chain, context.scope, model_data)
+	if not context.model_name then
 		return nil
 	end
 
 	return context
-end
-
---- Whether the buffer has a usable python parser
---- @param bufnr number
---- @return boolean
-function M.is_available(bufnr)
-	local ok, parser = pcall(vim.treesitter.get_parser, bufnr, "python")
-	return ok and parser ~= nil
 end
 
 return M
