@@ -78,27 +78,31 @@ function M.ty_config()
 end
 
 --- Configuration of the pogo preset
---- The Django environment is injected as `initializationOptions.djangoOrm`,
---- which pogo uses to bootstrap the ORM model index.
+--- The Django environment is injected as `initializationOptions.djangoOrm`
+--- (the documented contract), which pogo uses to bootstrap the ORM index.
+--- The log file lets `:DjangoDoctor` report schema readiness and errors.
 --- @return table
 function M.pogo_config()
-	return {
-		cmd = { "pogo" },
+	local preset = {
+		cmd = { "pogo", "-log-file", M.log_path() },
 		filetypes = { "python" },
 		root_markers = M.ROOT_MARKERS,
-		before_init = function(params)
-			local options = M.django_orm_options()
-			if not options then
-				return
-			end
-
-			params.initializationOptions = vim.tbl_deep_extend(
-				"force",
-				params.initializationOptions or {},
-				{ djangoOrm = options }
-			)
-		end,
 	}
+
+	local options = M.django_orm_options()
+	if options then
+		preset.init_options = { djangoOrm = options }
+	end
+
+	return preset
+end
+
+--- Path of the pogo log the preset asks the server to write
+--- @return string
+function M.log_path()
+	local directory = vim.fn.stdpath("cache") .. "/django.nvim"
+	vim.fn.mkdir(directory, "p")
+	return directory .. "/pogo.log"
 end
 
 --- Django environment handed to ORM aware servers

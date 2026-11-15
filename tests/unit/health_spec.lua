@@ -145,4 +145,66 @@ helpers.describe("health", function()
 		helpers.eq("django", sorted[2].name)
 		helpers.eq("completion_ready", sorted[3].name)
 	end)
+
+	helpers.it("__last_log_error finds the last failure", function()
+		local log = table.concat({
+			"INFO schema cache generation=1 models=16",
+			"ERROR worker crashed",
+			"INFO retrying",
+			"ERROR worker crashed again",
+		}, "\n")
+
+		helpers.eq("ERROR worker crashed again", health.__last_log_error(log))
+		helpers.eq(nil, health.__last_log_error("INFO all good"))
+	end)
+
+	helpers.it("__pogo_schema_item reports readiness from the log", function()
+		local lsp = require("django.lsp")
+		local original = lsp.log_path
+		local path = vim.fn.tempname() .. ".log"
+		vim.fn.writefile({ "INFO schema cache generation=3 models=16" }, path)
+		lsp.log_path = function()
+			return path
+		end
+
+		local item = health.__pogo_schema_item()
+
+		lsp.log_path = original
+		vim.fn.delete(path)
+
+		helpers.eq("ok", item.status)
+		helpers.contains(item.message, "generation 3")
+		helpers.contains(item.message, "16 models")
+	end)
+
+	helpers.it("__pogo_schema_item reports a missing log", function()
+		local lsp = require("django.lsp")
+		local original = lsp.log_path
+		lsp.log_path = function()
+			return "/nonexistent/pogo.log"
+		end
+
+		local item = health.__pogo_schema_item()
+
+		lsp.log_path = original
+
+		helpers.eq("info", item.status)
+	end)
+
+	helpers.it("__pogo_diagnostics_item reports an unattached server", function()
+		local item = health.__pogo_diagnostics_item()
+
+		helpers.eq("info", item.status)
+		helpers.contains(item.message, "not attached")
+	end)
+
+	helpers.it("__diagnostics_policy_item echoes the policy", function()
+		config.setup({ diagnostics = { pogo = "prefer" } })
+
+		local item = health.__diagnostics_policy_item()
+
+		config.setup({})
+
+		helpers.contains(item.message, "prefer")
+	end)
 end)

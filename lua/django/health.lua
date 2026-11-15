@@ -15,7 +15,7 @@ local config = require("django.config")
 M.PROBE_TIMEOUT = 10000
 
 --- Cache names inspected by the doctor
-M.CACHE_NAMES = { "DjangoViews", "DjangoModels", "completions" }
+M.CACHE_NAMES = { "DjangoViews", "DjangoModels", "completions_v2" }
 
 --- Display order for report items
 M.ORDER = {
@@ -27,11 +27,14 @@ M.ORDER = {
 	"django_types",
 	"ty",
 	"pogo",
+	"pogo_schema",
+	"pogo_diagnostics",
+	"diagnostics_policy",
 	"python_lsp",
 	"treesitter_python",
 	"cache:DjangoViews",
 	"cache:DjangoModels",
-	"cache:completions",
+	"cache:completions_v2",
 	"completion_ready",
 }
 
@@ -92,6 +95,10 @@ function M.inspect()
 		})
 	end
 
+	table.insert(items, M.__pogo_schema_item())
+	table.insert(items, M.__pogo_diagnostics_item())
+	table.insert(items, M.__diagnostics_policy_item())
+
 	local has_parser = utils.has_treesitter_parser("python")
 	if has_parser then
 		table.insert(items, { name = "treesitter_python", status = "ok", message = "python parser available" })
@@ -126,7 +133,7 @@ function M.inspect()
 		table.insert(items, M.__cache_item(cache, cache_name, root))
 	end
 
-	local has_cache = vim.fn.filereadable(cache.path("completions", root)) == 1
+	local has_cache = vim.fn.filereadable(cache.path("completions_v2", root)) == 1
 	if not root then
 		table.insert(items, {
 			name = "completion_ready",
@@ -219,7 +226,16 @@ function M.probe(on_done)
 
 	local pogo = vim.fn.exepath("pogo")
 	if pogo ~= "" then
-		immediate(4, { name = "pogo", status = "ok", message = pogo .. " (" .. M.__preset_state("pogo") .. ")" })
+		schedule(4, { pogo, "-version" }, function(result)
+			return M.__probe_item("pogo", result, function(version)
+				return string.format(
+					"%s (%s, log: %s)",
+					version,
+					M.__preset_state("pogo"),
+					require("django.lsp").log_path()
+				)
+			end, "download pogo from https://github.com/amirhasanzadehpy/Pogo/releases")
+		end)
 	else
 		immediate(4, {
 			name = "pogo",
@@ -390,6 +406,150 @@ function M.__preset_state(name)
 	end
 
 	return "preset disabled"
+end
+
+--- Report the schema readiness of the pogo server from its log
+--- @return DjangoHealthItem
+function M.__pogo_schema_item()
+	local log = M.__read_pogo_log()
+
+	if not log then
+		return {
+			name = "pogo_schema",
+			status = "info",
+			message = "no pogo log yet (preset disabled or server not started)",
+		}
+	end
+
+	local generation, models = log:match("schema cache generation=(%d+) models=(%d+)")
+	if generation then
+		return {
+			name = "pogo_schema",
+			status = "ok",
+			message = string.format("schema generation %s with %s models", generation, models),
+		}
+	end
+
+	local error_line = M.__last_log_error(log)
+	if error_line then
+		return {
+			name = "pogo_schema",
+			status = "error",
+			message = error_line,
+			hint = "inspect the pogo log at " .. require("django.lsp").log_path(),
+		}
+	end
+
+	return {
+		name = "pogo_schema",
+		status = "warn",
+		message = "schema not ready yet",
+		hint = "save a Python file or inspect the pogo log at " .. require("django.lsp").log_path(),
+	}
+end
+
+--- Report whether pogo actually contributes ORM diagnostics
+--- @return DjangoHealthItem
+function M.__pogo_diagnostics_item()
+	local attached = false
+
+	for _, client in ipairs(vim.lsp.get_clients({ bufnr = 0 })) do
+		if client.name == "pogo" then
+			attached = true
+			break
+		end
+	end
+
+	if not attached then
+		return {
+			name = "pogo_diagnostics",
+			status = "info",
+			message = "pogo is not attached to the current buffer",
+		}
+	end
+
+	local count = 0
+	for _, diagnostic in ipairs(vim.diagnostic.get(0)) do
+		local code = diagnostic.code
+		if
+			diagnostic.source == "pogo"
+			and type(code) == "string"
+			and code:sub(1, #"django-orm.") == "django-orm."
+		then
+			count = count + 1
+		end
+	end
+
+	if count > 0 then
+		return {
+			name = "pogo_diagnostics",
+			status = "ok",
+			message = string.format("publishing %d ORM diagnostic(s)", count),
+		}
+	end
+
+	return {
+		name = "pogo_diagnostics",
+		status = "warn",
+		message = "attached but publishing no ORM diagnostics",
+		hint = 'pogo 0.4.0 suppresses diagnostics for built-in QuerySet methods; django.nvim keeps checking (diagnostics.pogo = "auto")',
+	}
+end
+
+--- Report the ORM diagnostics arbitration policy
+--- @return DjangoHealthItem
+function M.__diagnostics_policy_item()
+	local diagnostics = config.current.diagnostics or {}
+
+	return {
+		name = "diagnostics_policy",
+		status = diagnostics.enabled and "ok" or "info",
+		message = string.format(
+			"static checks %s, pogo arbitration: %s",
+			diagnostics.enabled and "enabled" or "disabled",
+			diagnostics.pogo or "auto"
+		),
+	}
+end
+
+--- Read the tail of the pogo log
+--- @return string|nil
+function M.__read_pogo_log()
+	local path = require("django.lsp").log_path()
+	if vim.fn.filereadable(path) ~= 1 then
+		return nil
+	end
+
+	local lines = vim.fn.readfile(path)
+	if #lines == 0 then
+		return nil
+	end
+
+	local tail = {}
+	for index = math.max(1, #lines - 500), #lines do
+		table.insert(tail, lines[index])
+	end
+
+	return table.concat(tail, "\n")
+end
+
+--- Find the last error line of a log
+--- @param log string
+--- @return string|nil
+function M.__last_log_error(log)
+	local found = nil
+
+	for line in log:gmatch("[^\n]+") do
+		if
+			line:find("ERROR", 1, true)
+			or line:find("Traceback", 1, true)
+			or line:find("worker error", 1, true)
+		then
+			found = vim.trim(line)
+		end
+	end
+
+	return found
 end
 
 --- Describe how the interpreter was resolved

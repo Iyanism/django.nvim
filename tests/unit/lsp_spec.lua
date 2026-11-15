@@ -24,9 +24,11 @@ helpers.describe("lsp presets", function()
 	helpers.it("builds the pogo preset", function()
 		local preset = lsp.pogo_config()
 
-		helpers.eq({ "pogo" }, preset.cmd)
+		helpers.eq("pogo", preset.cmd[1])
+		helpers.eq("-log-file", preset.cmd[2])
+		helpers.eq(lsp.log_path(), preset.cmd[3])
 		helpers.eq({ "python" }, preset.filetypes)
-		helpers.eq("function", type(preset.before_init))
+		helpers.eq(nil, preset.before_init)
 	end)
 
 	helpers.it("injects the Django environment into pogo", function()
@@ -34,16 +36,12 @@ helpers.describe("lsp presets", function()
 
 		helpers.with_cwd(root, function()
 			local preset = lsp.pogo_config()
-			local params = { initializationOptions = { keep = true } }
+			local options = preset.init_options and preset.init_options.djangoOrm
 
-			preset.before_init(params, preset)
-
-			local options = params.initializationOptions.djangoOrm
 			helpers.ok(options ~= nil, "expected djangoOrm options")
 			helpers.eq(root, options.projectRoot)
 			helpers.eq("project.settings", options.settingsModule)
 			helpers.ok(type(options.pythonPath) == "string", "expected a concrete interpreter path")
-			helpers.eq(true, params.initializationOptions.keep, "must not drop existing options")
 		end)
 	end)
 
@@ -54,12 +52,15 @@ helpers.describe("lsp presets", function()
 			helpers.eq(nil, lsp.django_orm_options())
 
 			local preset = lsp.pogo_config()
-			local params = {}
-
-			preset.before_init(params, preset)
-
-			helpers.eq(nil, params.initializationOptions)
+			helpers.eq(nil, preset.init_options)
 		end)
+	end)
+
+	helpers.it("writes the pogo log inside the cache directory", function()
+		local path = lsp.log_path()
+
+		helpers.contains(path, "django.nvim")
+		helpers.contains(path, "pogo.log")
 	end)
 
 	helpers.it("does not start a preset whose executable is missing", function()
