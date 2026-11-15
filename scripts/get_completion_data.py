@@ -16,78 +16,47 @@ from django_utils import setup_django  # noqa: E402
 
 _BASE_LOOKUPS = ["exact", "isnull", "in"]
 
-_NUMERIC_LOOKUPS = ["gt", "gte", "lt", "lte", "range"]
-
-_STRING_LOOKUPS = [
-    "iexact",
-    "contains",
-    "icontains",
-    "startswith",
-    "istartswith",
-    "endswith",
-    "iendswith",
-    "regex",
-    "iregex",
-]
-
-_DATE_LOOKUPS = [
-    "year",
-    "month",
-    "day",
-    "week",
-    "week_day",
-    "quarter",
-    "iso_year",
-    "iso_week_day",
-]
-
-_TIME_LOOKUPS = ["hour", "minute", "second"]
-
-_DATETIME_LOOKUPS = _DATE_LOOKUPS + _TIME_LOOKUPS
-
-_LOOKUP_BY_TYPE = {
-    # Numeric fields
-    "AutoField": _NUMERIC_LOOKUPS,
-    "BigAutoField": _NUMERIC_LOOKUPS,
-    "SmallAutoField": _NUMERIC_LOOKUPS,
-    "IntegerField": _NUMERIC_LOOKUPS,
-    "BigIntegerField": _NUMERIC_LOOKUPS,
-    "SmallIntegerField": _NUMERIC_LOOKUPS,
-    "PositiveIntegerField": _NUMERIC_LOOKUPS,
-    "PositiveSmallIntegerField": _NUMERIC_LOOKUPS,
-    "PositiveBigIntegerField": _NUMERIC_LOOKUPS,
-    "FloatField": _NUMERIC_LOOKUPS,
-    "DecimalField": _NUMERIC_LOOKUPS,
-    # String fields
-    "CharField": _STRING_LOOKUPS,
-    "TextField": _STRING_LOOKUPS,
-    "SlugField": _STRING_LOOKUPS,
-    "EmailField": _STRING_LOOKUPS,
-    "URLField": _STRING_LOOKUPS,
-    # Boolean
-    "BooleanField": [],
-    # Date/Time fields
-    "DateField": _NUMERIC_LOOKUPS + _DATE_LOOKUPS + ["date"],
-    "DateTimeField": _NUMERIC_LOOKUPS + _DATETIME_LOOKUPS + ["date", "time"],
-    "TimeField": _NUMERIC_LOOKUPS + _TIME_LOOKUPS,
-    "DurationField": _NUMERIC_LOOKUPS,
-    # Special fields
-    "JSONField": ["contains", "contained_by", "has_key", "has_keys", "has_any_keys"],
-    "UUIDField": ["iexact"] + _NUMERIC_LOOKUPS,
-    # File fields
-    "FileField": _STRING_LOOKUPS,
-    "ImageField": _STRING_LOOKUPS,
-    "FilePathField": _STRING_LOOKUPS,
-    # Binary
-    "BinaryField": [],
-    # IP fields
-    "IPAddressField": _STRING_LOOKUPS,
-    "GenericIPAddressField": _STRING_LOOKUPS,
-    # Relation fields (traversal only)
-    "ForeignKey": [],
-    "OneToOneField": [],
-    "ManyToManyField": [],
+# Relation fields are traversal-only for completion purposes. Their lookups
+# depend on the primary key of the target model, so the Lua side only offers
+# the base lookups (exact, isnull, in) for them.
+_TRAVERSAL_TYPES = {
+    "ForeignKey",
+    "OneToOneField",
+    "ManyToManyField",
+    "ManyToOneRel",
+    "ManyToManyRel",
+    "OneToOneRel",
 }
+
+
+def _get_lookup_map():
+    """Derive the lookup names of every field class from the runtime registry.
+
+    Django registers the valid lookups and transforms on each field instance,
+    so the schema follows the installed Django version instead of a hardcoded
+    table. Only field classes that actually appear in the project are emitted;
+    the Lua side merges `_BASE_LOOKUPS` in front of them.
+    """
+    from django.apps import apps
+
+    by_type = {}
+
+    for model in apps.get_models():
+        for field in model._meta.get_fields():
+            field_type = field.__class__.__name__
+            if field_type in by_type:
+                continue
+
+            if field_type in _TRAVERSAL_TYPES:
+                by_type[field_type] = []
+                continue
+
+            try:
+                by_type[field_type] = sorted(field.get_lookups().keys())
+            except Exception:
+                by_type[field_type] = []
+
+    return dict(sorted(by_type.items()))
 
 _LOOKUP_METADATA = {
     "exact": {"description": "Exact match", "sql": "WHERE {field} = {value}"},
@@ -504,7 +473,7 @@ def get_completion_data():
         "models": models_data,
         "lookups": {
             "base": _BASE_LOOKUPS,
-            "by_type": _LOOKUP_BY_TYPE,
+            "by_type": _get_lookup_map(),
             "metadata": _LOOKUP_METADATA,
         },
     }

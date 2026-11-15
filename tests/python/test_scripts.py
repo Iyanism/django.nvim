@@ -85,7 +85,8 @@ def test_get_completion_data_shape() -> None:
     data = decode_stdout(run_script("get_completion_data.py"))
 
     assert isinstance(data, dict)
-    assert {"models", "lookups"} <= data.keys()
+    assert {"schema_version", "models", "lookups"} <= data.keys()
+    assert data["schema_version"] == 2
 
     models = data["models"]
     assert isinstance(models, dict)
@@ -116,6 +117,47 @@ def test_get_completion_data_shape() -> None:
     assert "exact" in metadata
     assert metadata["exact"]["description"]
     assert metadata["exact"]["sql"]
+
+
+def test_get_completion_data_derives_lookups_from_django() -> None:
+    data = decode_stdout(run_script("get_completion_data.py"))
+    by_type = data["lookups"]["by_type"]
+
+    # Lookups come from the runtime field registry, so transforms and
+    # version specific lookups are included without a hardcoded table.
+    assert "year" in by_type["DateTimeField"]
+    assert "date" in by_type["DateTimeField"]
+    assert "range" in by_type["IntegerField"]
+
+    # Relations stay traversal-only: their lookups depend on the target pk.
+    for relation_type in ("ForeignKey", "OneToOneField", "ManyToManyField"):
+        if relation_type in by_type:
+            assert by_type[relation_type] == []
+
+    # Every emitted field class maps to a list of lookup names.
+    for field_type, names in by_type.items():
+        assert isinstance(names, list), field_type
+        assert len(names) == len(set(names)), field_type
+
+
+def test_get_completion_data_names_reverse_relations() -> None:
+    data = decode_stdout(run_script("get_completion_data.py"))
+    post_fields = data["models"]["Post"]["fields"]
+
+    # Reverse relations are keyed by the ORM query name and also carry the
+    # instance accessor name.
+    reverse = {
+        name: field
+        for name, field in post_fields.items()
+        if field["type"] in {"ManyToOneRel", "ManyToManyRel", "OneToOneRel"}
+    }
+    assert reverse, "expected reverse relations on Post"
+
+    for name, field in reverse.items():
+        assert field["query_name"] == name
+        assert field["accessor_name"]
+        assert field["related_model"]
+
 
 
 def test_scripts_report_errors_on_stderr() -> None:
