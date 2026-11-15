@@ -56,6 +56,17 @@ local function resolve_lines(lines, row, col, model_data)
 	return ts_context.resolve(bufnr, row, col, model_data)
 end
 
+--- Analyse the syntax of a multi line buffer without resolving the model
+--- @param lines string[]
+--- @param row number
+--- @param col number
+--- @return DjangoOrmContext|nil
+local function analyze_lines(lines, row, col)
+	local bufnr = vim.api.nvim_create_buf(false, true)
+	vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+	return ts_context.analyze(bufnr, row, col)
+end
+
 local function skip_without_parser()
 	if not utils.has_treesitter_parser("python") then
 		helpers.skip("the python parser is not installed")
@@ -169,6 +180,30 @@ helpers.describe("ts_context", function()
 		helpers.eq("Post", context.model_name)
 		helpers.eq("filter", context.method)
 		helpers.eq("author__username__icontains", context.prefix)
+	end)
+
+	helpers.it("resolves a call inside a class body", function()
+		skip_without_parser()
+		local lines = {
+			"class ProbeView(ListView):",
+			"    model = Post",
+			"",
+			"    def get_context_data(self, **kwargs):",
+			"        qs = self.get_queryset().filter(tit",
+		}
+		local context = analyze_lines(lines, 4, #lines[5])
+		helpers.ok(context ~= nil, "expected a context")
+		helpers.eq("filter", context.method)
+		helpers.eq("tit", context.prefix)
+	end)
+
+	helpers.it("resolves a call inside a loop header", function()
+		skip_without_parser()
+		local code = "for post in Post.objects.filter(tit"
+		local context = resolve(code)
+		helpers.ok(context ~= nil, "expected a context")
+		helpers.eq("filter", context.method)
+		helpers.eq("tit", context.prefix)
 	end)
 
 	helpers.it("ignores previous arguments", function()

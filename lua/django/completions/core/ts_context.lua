@@ -126,7 +126,11 @@ function M.__statement(node)
 		return nil
 	end
 
-	while node:parent() and node:parent():type() ~= "module" do
+	while node:parent() do
+		local parent_type = node:parent():type()
+		if parent_type == "module" or parent_type == "block" then
+			break
+		end
 		node = node:parent()
 	end
 
@@ -437,14 +441,16 @@ end
 --- @param bufnr number
 --- @return string arg_kind, string prefix
 function M.__incomplete_argument(node, attribute, row, col, bufnr)
-	local statement = M.__statement(node) or node
-	if not statement then
+	-- The argument being typed is a sibling of the call target inside the
+	-- ERROR node, so only that node is searched.
+	local error_node = M.__ancestor(node, "ERROR") or node
+	if not error_node then
 		return "none", ""
 	end
 
 	local candidate = nil
 
-	for _, child in ipairs(statement:named_children()) do
+	for _, child in ipairs(error_node:named_children()) do
 		if child:type() == "identifier" and M.__ends_before(child, row, col) then
 			candidate = child
 		end
