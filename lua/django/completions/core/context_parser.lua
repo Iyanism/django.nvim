@@ -38,7 +38,7 @@ function M.parse(bufnr, line, col)
 		return nil
 	end
 
-	local model_name = hover_context.resolve(bufnr, line, col)
+	model_name = hover_context.resolve(bufnr, line, col)
 	if not model_name then
 		return nil
 	end
