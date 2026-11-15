@@ -40,6 +40,11 @@ M.default = {
 	diagnostics = {
 		enabled = true, -- static ORM path diagnostics on write
 		debounce_ms = 300, -- delay before a buffer is checked
+		-- How ORM diagnostics are shared with an attached pogo server:
+		--   "auto"   our checks always run, Pogo duplicates are suppressed
+		--   "prefer" Pogo owns ORM diagnostics whenever it is attached
+		--   "ignore" always publish our own diagnostics
+		pogo = "auto",
 	},
 	lsp = {
 		ty = { enabled = false }, -- start ty (https://github.com/astral-sh/ty) for Python buffers

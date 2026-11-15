@@ -18,6 +18,16 @@ M.SEVERITY = vim.diagnostic.severity.WARN
 --- LSP clients that already report ORM errors
 M.EXTERNAL_CLIENTS = { pogo = true }
 
+--- Source and code prefix Pogo uses for its ORM diagnostics
+M.POGO_SOURCE = "pogo"
+M.POGO_CODE_PREFIX = "django-orm."
+
+--- Supported arbitration policies (see config.diagnostics.pogo)
+M.POLICIES = { auto = true, prefer = true, ignore = true }
+
+--- Last seen external diagnostic signature per buffer
+M.external_signatures = {}
+
 --- Diagnostic codes, aligned with the vocabulary Pogo publishes so that a
 --- single `vim.diagnostic.config` filter and code based dedupe cover both.
 M.CODES = {
@@ -88,7 +98,31 @@ function M.setup()
 		group = group,
 		callback = function(args)
 			pending[args.buf] = nil
+			M.external_signatures[args.buf] = nil
 			vim.diagnostic.reset(M.NAMESPACE, args.buf)
+		end,
+	})
+
+	-- Pogo publishes diagnostics asynchronously: reconcile again when its ORM
+	-- diagnostics change so duplicates are suppressed (and restored when they
+	-- disappear). The signature guard keeps our own updates from looping.
+	vim.api.nvim_create_autocmd("DiagnosticChanged", {
+		group = group,
+		callback = function(args)
+			if M.policy() ~= "auto" then
+				return
+			end
+
+			local bufnr = tonumber(args.buf)
+			if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
+				return
+			end
+
+			local signature = M.__external_signature(bufnr)
+			if signature ~= (M.external_signatures[bufnr] or "") then
+				M.external_signatures[bufnr] = signature
+				M.schedule(bufnr)
+			end
 		end,
 	})
 
@@ -154,12 +188,141 @@ function M.publish(bufnr)
 		return
 	end
 
-	if M.is_covered_externally(bufnr) then
+	local policy = M.policy()
+
+	if policy == "prefer" and M.is_covered_externally(bufnr) then
 		vim.diagnostic.reset(M.NAMESPACE, bufnr)
 		return
 	end
 
-	vim.diagnostic.set(M.NAMESPACE, bufnr, M.collect(bufnr))
+	local diagnostics = M.collect(bufnr)
+
+	if policy == "auto" then
+		diagnostics = M.__dedupe(diagnostics, M.__external_diagnostics(bufnr))
+	end
+
+	M.external_signatures[bufnr] = M.__external_signature(bufnr)
+	vim.diagnostic.set(M.NAMESPACE, bufnr, diagnostics)
+end
+
+--- Arbitration policy for ORM diagnostics
+--- @return string "auto"|"prefer"|"ignore"
+function M.policy()
+	local diagnostics = config.current.diagnostics
+	local policy = diagnostics and diagnostics.pogo or nil
+
+	if M.POLICIES[policy] then
+		return policy
+	end
+
+	return "auto"
+end
+
+--- Whether a diagnostic was published by Pogo for an ORM path
+--- @param diagnostic vim.Diagnostic
+--- @return boolean
+function M.__is_external(diagnostic)
+	if not diagnostic or diagnostic.source ~= M.POGO_SOURCE then
+		return false
+	end
+
+	local code = diagnostic.code
+	if type(code) ~= "string" then
+		return false
+	end
+
+	return code:sub(1, #M.POGO_CODE_PREFIX) == M.POGO_CODE_PREFIX
+end
+
+--- Collect the Pogo ORM diagnostics of a buffer
+--- @param bufnr number
+--- @return vim.Diagnostic[]
+function M.__external_diagnostics(bufnr)
+	local external = {}
+
+	for _, diagnostic in ipairs(vim.diagnostic.get(bufnr)) do
+		if M.__is_external(diagnostic) then
+			table.insert(external, diagnostic)
+		end
+	end
+
+	return external
+end
+
+--- Stable signature of the external diagnostics of a buffer
+--- @param bufnr number
+--- @return string
+function M.__external_signature(bufnr)
+	local parts = {}
+
+	for _, diagnostic in ipairs(M.__external_diagnostics(bufnr)) do
+		table.insert(
+			parts,
+			string.format(
+				"%s:%d:%d:%d:%d",
+				tostring(diagnostic.code),
+				diagnostic.lnum or 0,
+				diagnostic.col or 0,
+				diagnostic.end_lnum or diagnostic.lnum or 0,
+				diagnostic.end_col or diagnostic.col or 0
+			)
+		)
+	end
+
+	table.sort(parts)
+
+	return table.concat(parts, "|")
+end
+
+--- Drop our diagnostics that Pogo already reports
+--- @param diagnostics vim.Diagnostic[]
+--- @param external vim.Diagnostic[]
+--- @return vim.Diagnostic[]
+function M.__dedupe(diagnostics, external)
+	if not external or #external == 0 then
+		return diagnostics
+	end
+
+	local kept = {}
+
+	for _, diagnostic in ipairs(diagnostics) do
+		if not M.__duplicates(diagnostic, external) then
+			table.insert(kept, diagnostic)
+		end
+	end
+
+	return kept
+end
+
+--- Whether an external diagnostic covers the same issue as ours
+--- @param diagnostic vim.Diagnostic
+--- @param external vim.Diagnostic[]
+--- @return boolean
+function M.__duplicates(diagnostic, external)
+	for _, other in ipairs(external) do
+		if diagnostic.code == other.code and M.__overlaps(diagnostic, other) then
+			return true
+		end
+	end
+
+	return false
+end
+
+--- Whether two diagnostics underline overlapping text on the same line
+--- @param left vim.Diagnostic
+--- @param right vim.Diagnostic
+--- @return boolean
+function M.__overlaps(left, right)
+	if (left.lnum or 0) ~= (right.lnum or 0) then
+		return false
+	end
+
+	local left_start = left.col or 0
+	local right_start = right.col or 0
+	local left_end = math.max(left.end_col or left_start, left_start + 1)
+	local right_end = math.max(right.end_col or right_start, right_start + 1)
+
+	return left_start < right_end and right_start < left_end
 end
 
 --- Whether another tool already reports ORM errors for the buffer

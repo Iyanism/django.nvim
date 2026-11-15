@@ -1,6 +1,7 @@
 local helpers = require("helpers")
 local ModelData = require("django.completions.core.model_data")
 local orm = require("django.diagnostics.orm")
+local config = require("django.config")
 local utils = require("django.utils")
 
 --- Runtime schema fixture
@@ -354,6 +355,92 @@ helpers.describe("diagnostics", function()
 		helpers.eq(true, orm.__covered_by({ { name = "pogo" } }))
 		helpers.eq(false, orm.__covered_by({ { name = "pyright" }, { name = "ruff" } }))
 		helpers.eq(false, orm.__covered_by(nil))
+	end)
+
+	helpers.it("defaults to the auto arbitration policy", function()
+		config.setup({})
+		helpers.eq("auto", orm.policy())
+	end)
+
+	helpers.it("accepts the supported arbitration policies", function()
+		config.setup({ diagnostics = { pogo = "prefer" } })
+		helpers.eq("prefer", orm.policy())
+
+		config.setup({ diagnostics = { pogo = "ignore" } })
+		helpers.eq("ignore", orm.policy())
+
+		config.setup({ diagnostics = { pogo = "bogus" } })
+		helpers.eq("auto", orm.policy())
+
+		config.setup({})
+	end)
+
+	helpers.it("identifies Pogo ORM diagnostics", function()
+		helpers.eq(true, orm.__is_external({ source = "pogo", code = "django-orm.unknown-path-segment" }))
+		helpers.eq(false, orm.__is_external({ source = "pogo", code = "other" }))
+		helpers.eq(false, orm.__is_external({ source = "django.nvim", code = "django-orm.unknown-path-segment" }))
+		helpers.eq(false, orm.__is_external({ source = "pogo", code = 42 }))
+	end)
+
+	helpers.it("suppresses duplicates of Pogo diagnostics", function()
+		local ours = {
+			{ code = orm.CODES.unknown_segment, lnum = 0, col = 20, end_lnum = 0, end_col = 25 },
+		}
+		local duplicate = {
+			{ source = "pogo", code = orm.CODES.unknown_segment, lnum = 0, col = 20, end_lnum = 0, end_col = 25 },
+		}
+		local different = {
+			{ source = "pogo", code = orm.CODES.invalid_lookup, lnum = 0, col = 20, end_lnum = 0, end_col = 25 },
+		}
+
+		helpers.eq(0, #orm.__dedupe(ours, duplicate))
+		helpers.eq(1, #orm.__dedupe(ours, different))
+		helpers.eq(ours, orm.__dedupe(ours, {}))
+	end)
+
+	helpers.it("keeps checking in auto mode when Pogo is attached", function()
+		skip_without_parser()
+		config.setup({ diagnostics = { pogo = "auto" } })
+
+		local original = orm.is_covered_externally
+		orm.is_covered_externally = function()
+			return true
+		end
+
+		local bufnr = vim.api.nvim_create_buf(false, true)
+		vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "Post.objects.filter(titel='x')" })
+		vim.bo[bufnr].filetype = "python"
+		orm.publish(bufnr)
+		local diagnostics = vim.diagnostic.get(bufnr, { namespace = orm.NAMESPACE })
+
+		orm.is_covered_externally = original
+		vim.api.nvim_buf_delete(bufnr, { force = true })
+		config.setup({})
+
+		helpers.eq(1, #diagnostics)
+		helpers.eq(orm.CODES.unknown_segment, diagnostics[1].code)
+	end)
+
+	helpers.it("steps aside in prefer mode", function()
+		skip_without_parser()
+		config.setup({ diagnostics = { pogo = "prefer" } })
+
+		local original = orm.is_covered_externally
+		orm.is_covered_externally = function()
+			return true
+		end
+
+		local bufnr = vim.api.nvim_create_buf(false, true)
+		vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "Post.objects.filter(titel='x')" })
+		vim.bo[bufnr].filetype = "python"
+		orm.publish(bufnr)
+		local diagnostics = vim.diagnostic.get(bufnr, { namespace = orm.NAMESPACE })
+
+		orm.is_covered_externally = original
+		vim.api.nvim_buf_delete(bufnr, { force = true })
+		config.setup({})
+
+		helpers.eq(0, #diagnostics)
 	end)
 
 	helpers.it("reports the segment range of a path", function()
