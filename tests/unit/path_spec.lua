@@ -23,6 +23,13 @@ local function make_model_data()
 					definition = "post = models.ForeignKey(Post)",
 					related_model = "Comment",
 				},
+				child = {
+					type = "ManyToOneRel",
+					definition = "post = models.ForeignKey(Post)",
+					related_model = "Child",
+					query_name = "child",
+					accessor_name = "child_set",
+				},
 			},
 		},
 		User = {
@@ -42,6 +49,15 @@ local function make_model_data()
 			fields = {
 				id = { type = "AutoField", definition = "id = models.AutoField()" },
 				content = { type = "TextField", definition = "content = models.TextField()" },
+			},
+		},
+		Child = {
+			app_label = "blog",
+			module = "blog.models",
+			pk = "id",
+			fields = {
+				id = { type = "AutoField", definition = "id = models.AutoField()" },
+				title = { type = "CharField", definition = "title = models.CharField()" },
 			},
 		},
 	}
@@ -124,6 +140,16 @@ helpers.describe("path", function()
 		local result = path.resolve("Post", { "comments" }, model_data)
 		helpers.eq(true, result.ok)
 		helpers.eq("Comment", result.model)
+	end)
+
+	helpers.it("resolves reverse relations by their query name", function()
+		local result = path.resolve("Post", { "child" }, model_data)
+		helpers.eq(true, result.ok)
+		helpers.eq("Child", result.model)
+
+		local accessor = path.resolve("Post", { "child_set" }, model_data)
+		helpers.eq(false, accessor.ok)
+		helpers.eq("unknown-field", accessor.error.kind)
 	end)
 
 	helpers.it("resolves a nested field", function()

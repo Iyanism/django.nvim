@@ -6,7 +6,7 @@ local fetcher = require("django.fetcher")
 local ModelData = require("django.completions.core.model_data")
 
 local SCRIPT_NAME = "get_completion_data.py"
-local CACHE_NAME = "completions"
+local CACHE_NAME = "completions_v2"
 
 function M.setup()
 	local auto_refresh = config.current.completions.auto_refresh

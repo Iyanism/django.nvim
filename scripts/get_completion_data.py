@@ -403,30 +403,33 @@ def _get_field_metadata(field):
 
 
 def _get_reverse_relation_metadata(field):
-    """Extract metadata for a reverse relation field."""
-    from django.db.models.fields.reverse_related import OneToOneRel
+    """Extract metadata for a reverse relation field.
 
+    Django uses two different names for a reverse relation:
+    - the query name (`filter(child=...)`, `field.name`) used in ORM paths
+    - the accessor name (`instance.child_set`) used on model instances
+
+    They only differ when the forward field has no `related_name`, so both
+    are emitted and the schema is keyed by the query name.
+    """
     related_model = field.related_model
     related_field = field.field
-    field_name = field.name
 
-    reverse_name = field_name
-    if hasattr(related_field, "remote_field") and related_field.remote_field:
-        related_name_attr = related_field.remote_field.related_name
-        if related_name_attr:
-            reverse_name = related_name_attr
-        else:
-            if isinstance(field, OneToOneRel):
-                reverse_name = related_model._meta.model_name
-            else:
-                reverse_name = f"{related_model._meta.model_name}_set"
+    query_name = field.name
+    try:
+        accessor_name = field.get_accessor_name()
+    except Exception:
+        accessor_name = query_name
 
     metadata = {
         "type": field.__class__.__name__,
         "related_model": related_model.__name__,
         "related_app": related_model._meta.app_label,
         "related_field": related_field.name,
-        "reverse_name": reverse_name,
+        "query_name": query_name,
+        "accessor_name": accessor_name,
+        # Kept for older consumers of the schema
+        "reverse_name": accessor_name,
         "traversable": True,
     }
 
@@ -497,6 +500,7 @@ def get_completion_data():
         }
 
     return {
+        "schema_version": 2,
         "models": models_data,
         "lookups": {
             "base": _BASE_LOOKUPS,

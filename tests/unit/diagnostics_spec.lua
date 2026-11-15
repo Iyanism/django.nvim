@@ -32,6 +32,13 @@ local function fixture()
 						definition = "post = models.ForeignKey(Post)",
 						related_model = "Comment",
 					},
+					child = {
+						type = "ManyToOneRel",
+						definition = "post = models.ForeignKey(Post)",
+						related_model = "Child",
+						query_name = "child",
+						accessor_name = "child_set",
+					},
 				},
 			},
 			User = {
@@ -73,6 +80,15 @@ local function fixture()
 				fields = {
 					id = { type = "AutoField", definition = "id = models.AutoField()" },
 					content = { type = "TextField", definition = "content = models.TextField()" },
+				},
+			},
+			Child = {
+				app_label = "blog",
+				module = "blog.models",
+				pk = "id",
+				fields = {
+					id = { type = "AutoField", definition = "id = models.AutoField()" },
+					title = { type = "CharField", definition = "title = models.CharField()" },
 				},
 			},
 		},
@@ -315,6 +331,15 @@ helpers.describe("diagnostics", function()
 			"post = Post.objects.get(pk=1)",
 			"post.comments.filter(content='x')",
 		}))
+	end)
+
+	helpers.it("rejects reverse accessor names in ORM paths", function()
+		skip_without_parser()
+		local diagnostics = check_line("Post.objects.filter(child_set='x')")
+
+		helpers.eq(1, #diagnostics)
+		helpers.eq(orm.CODES.unknown_segment, diagnostics[1].code)
+		helpers.eq({}, check_line("Post.objects.filter(child__title='x')"))
 	end)
 
 	helpers.it("resolves import aliases", function()

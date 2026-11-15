@@ -561,7 +561,7 @@ function M.__walk_chain(model_name, segments, model_data)
 				return nil
 			end
 
-			local field = model_data:get_field(current, segment)
+			local field = model_data:get_instance_field(current, segment)
 			if not field or not field.related_model then
 				return nil
 			end

@@ -16,6 +16,12 @@ local function fixture()
 					title = { type = "CharField" },
 					author = { type = "ForeignKey", related_model = "User" },
 					comments = { type = "ManyToOneRel", related_model = "Comment" },
+					child = {
+						type = "ManyToOneRel",
+						related_model = "Child",
+						query_name = "child",
+						accessor_name = "child_set",
+					},
 				},
 			},
 			User = {
@@ -27,6 +33,11 @@ local function fixture()
 				app_label = "blog",
 				pk = "id",
 				fields = { id = { type = "AutoField" }, content = { type = "TextField" } },
+			},
+			Child = {
+				app_label = "blog",
+				pk = "id",
+				fields = { id = { type = "AutoField" }, title = { type = "CharField" } },
 			},
 		},
 		lookups = { base = { "exact" }, by_type = {} },
@@ -289,6 +300,16 @@ helpers.describe("ts_context", function()
 		helpers.ok(context ~= nil, "expected a context")
 		helpers.eq("Comment", context.model_name)
 		helpers.eq("filter", context.method)
+	end)
+
+	helpers.it("follows a reverse accessor on an instance", function()
+		skip_without_parser()
+		local context = resolve_lines({
+			"post = Post.objects.get(pk=1)",
+			"post.child_set.filter(tit",
+		}, 1, #"post.child_set.filter(tit", fixture())
+		helpers.ok(context ~= nil, "expected a context")
+		helpers.eq("Child", context.model_name)
 	end)
 
 	helpers.it("follows a relation behind a queryset call", function()
