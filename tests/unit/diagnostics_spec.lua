@@ -197,10 +197,26 @@ helpers.describe("diagnostics", function()
 		local diagnostics = check_line('Post.objects.values("title__icontains")')
 
 		helpers.eq(1, #diagnostics)
-		helpers.eq(orm.CODES.invalid_lookup, diagnostics[1].code)
+		helpers.eq(orm.CODES.invalid_projection, diagnostics[1].code)
 		helpers.contains(diagnostics[1].message, "icontains")
 
 		helpers.eq({}, check_line('Post.objects.values("author__username")'))
+	end)
+
+	helpers.it("reports lookups on ordering methods", function()
+		skip_without_parser()
+		local diagnostics = check_line('Post.objects.order_by("title__icontains")')
+
+		helpers.eq(1, #diagnostics)
+		helpers.eq(orm.CODES.invalid_lookup, diagnostics[1].code)
+	end)
+
+	helpers.it("uses the Pogo diagnostic vocabulary", function()
+		helpers.eq("django-orm.unknown-path-segment", orm.CODES.unknown_segment)
+		helpers.eq("django-orm.nonrelation-traversal", orm.CODES.non_relation_traversal)
+		helpers.eq("django-orm.invalid-lookup-or-transform", orm.CODES.invalid_lookup)
+		helpers.eq("django-orm.invalid-projection-path", orm.CODES.invalid_projection)
+		helpers.eq("django-orm.invalid-select-related-target", orm.CODES.invalid_select_related)
 	end)
 
 	helpers.it("accepts order_by paths", function()

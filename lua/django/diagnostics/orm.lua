@@ -18,11 +18,14 @@ M.SEVERITY = vim.diagnostic.severity.WARN
 --- LSP clients that already report ORM errors
 M.EXTERNAL_CLIENTS = { pogo = true }
 
+--- Diagnostic codes, aligned with the vocabulary Pogo publishes so that a
+--- single `vim.diagnostic.config` filter and code based dedupe cover both.
 M.CODES = {
 	unknown_segment = "django-orm.unknown-path-segment",
-	invalid_lookup = "django-orm.invalid-lookup",
-	non_relation_traversal = "django-orm.non-relation-traversal",
-	invalid_select_related = "django-orm.invalid-select-related",
+	non_relation_traversal = "django-orm.nonrelation-traversal",
+	invalid_lookup = "django-orm.invalid-lookup-or-transform",
+	invalid_projection = "django-orm.invalid-projection-path",
+	invalid_select_related = "django-orm.invalid-select-related-target",
 }
 
 --- Relation types accepted by select_related()
@@ -36,6 +39,8 @@ M.SELECT_RELATIONS = {
 --- paths: "keyword" | "string"
 --- lookups: whether a lookup segment is allowed (only the filter family is)
 --- relations: restrict the terminal field to a relation type
+--- projection: the method projects columns (values/only/...), so a lookup is
+---             reported as an invalid projection path
 --- skip: keyword arguments that are not paths
 M.METHODS = {
 	filter = { paths = "keyword", lookups = true },
@@ -45,10 +50,10 @@ M.METHODS = {
 	update_or_create = { paths = "keyword", lookups = true, skip = { defaults = true } },
 	create = { paths = "keyword", lookups = false },
 	update = { paths = "keyword", lookups = false },
-	values = { paths = "string", lookups = false },
-	values_list = { paths = "string", lookups = false },
-	only = { paths = "string", lookups = false },
-	defer = { paths = "string", lookups = false },
+	values = { paths = "string", lookups = false, projection = true },
+	values_list = { paths = "string", lookups = false, projection = true },
+	only = { paths = "string", lookups = false, projection = true },
+	defer = { paths = "string", lookups = false, projection = true },
 	order_by = { paths = "string", lookups = false },
 	latest = { paths = "string", lookups = false },
 	earliest = { paths = "string", lookups = false },
@@ -437,13 +442,15 @@ end
 function M.__check_resolved(text, row, col, spec, result)
 	if result.lookup and spec.lookups == false then
 		local start_col, end_col = M.__segment_range(text, #path.split(text), col)
+		local code = spec.projection and M.CODES.invalid_projection or M.CODES.invalid_lookup
+
 		return {
 			M.__diagnostic(
 				row,
 				start_col,
 				end_col,
 				string.format("Lookups are not supported by this method ('%s')", result.lookup),
-				M.CODES.invalid_lookup
+				code
 			),
 		}
 	end
